@@ -1,0 +1,203 @@
+from flask import Flask, render_template_string, request, redirect
+import requests
+
+app = Flask(__name__)
+
+# News API Key
+API_KEY = "c6643707de384718b344450cd4ae65b5"
+
+# Simple in-memory comments storage
+comments_store = {}
+
+# HTML template
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Tech News</title>
+<meta http-equiv="refresh" content="300">
+<style>
+body { font-family: Arial; margin:0; background:#f4f4f4; }
+
+header {
+    background:#b80000;
+    color:white;
+    padding:15px;
+    display:flex;
+    justify-content:space-between;
+    flex-wrap: wrap;
+}
+
+.logo { font-size:24px; font-weight:bold; }
+
+nav a {
+    color:white;
+    margin:0 10px;
+    text-decoration:none;
+    font-weight:bold;
+}
+
+.section-title { margin:20px; }
+
+.breaking, .news { margin:20px; background:white; padding:20px; }
+
+.news-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px; }
+
+.card { box-shadow:0 2px 5px rgba(0,0,0,0.1); padding:15px; }
+
+.card img { width:100%; }
+
+.comment-section { margin-top:10px; background:#f9f9f9; padding:10px; border-radius:5px; }
+
+.comment-section h4 { margin:5px 0; }
+
+.comment-section form { margin-top:10px; }
+
+.comment-section input, .comment-section textarea {
+    width:100%; padding:8px; margin:5px 0; border-radius:3px; border:1px solid #ccc;
+}
+
+.comment-section button {
+    background:#b80000; color:white; border:none; padding:8px 15px; border-radius:3px; cursor:pointer;
+}
+
+footer { background:#222; color:white; text-align:center; padding:20px; margin-top:20px; }
+
+.search-bar { margin:20px; }
+.search-bar input { padding:8px; width:300px; border-radius:3px; border:1px solid #ccc; }
+.search-bar button { padding:8px 15px; border:none; border-radius:3px; background:#b80000; color:white; cursor:pointer; }
+</style>
+</head>
+
+<body>
+
+<header>
+<div class="logo">TECH NEWS</div>
+<nav>
+<a href="/?section=technology">Technology</a>
+<a href="/?section=science">Science</a>
+<a href="/?section=business">Business</a>
+<a href="/?section=health">Health</a>
+</nav>
+<form class="search-bar" action="/" method="get">
+<input type="text" name="q" placeholder="Search news..." value="{{ search_query }}">
+<button type="submit">Search</button>
+</form>
+</header>
+
+<h2 class="section-title">{{ section.upper() }} NEWS</h2>
+
+<div class="breaking">
+<h3>{{ breaking.title }}</h3>
+<p>{{ breaking.description }}</p>
+<p><strong>AI Summary:</strong> {{ breaking.summary }}</p>
+<a href="{{ breaking.url }}" target="_blank">Read more</a>
+
+<div class="comment-section">
+<h4>Comments:</h4>
+{% for c in comments.get(breaking.title, []) %}
+<p><strong>{{c['name']}}:</strong> {{c['comment']}}</p>
+{% endfor %}
+
+<form action="/comment" method="post">
+<input type="hidden" name="title" value="{{ breaking.title }}">
+<input type="text" name="name" placeholder="Your name" required>
+<textarea name="comment" placeholder="Write a comment..." required></textarea>
+<button type="submit">Post Comment</button>
+</form>
+</div>
+
+</div>
+
+<div class="news">
+<div class="news-grid">
+{% for article in articles %}
+<div class="card">
+{% if article.urlToImage %}
+<img src="{{ article.urlToImage }}">
+{% endif %}
+<h3>{{ article.title }}</h3>
+<p>{{ article.description }}</p>
+<p><strong>AI Summary:</strong> {{ article.summary }}</p>
+<a href="{{ article.url }}" target="_blank">Read more</a>
+
+<div class="comment-section">
+<h4>Comments:</h4>
+{% for c in comments.get(article.title, []) %}
+<p><strong>{{c['name']}}:</strong> {{c['comment']}}</p>
+{% endfor %}
+<form action="/comment" method="post">
+<input type="hidden" name="title" value="{{ article.title }}">
+<input type="text" name="name" placeholder="Your name" required>
+<textarea name="comment" placeholder="Write a comment..." required></textarea>
+<button type="submit">Post Comment</button>
+</form>
+</div>
+
+</div>
+{% endfor %}
+</div>
+</div>
+
+<footer>
+<p>Contact: godfredabakah563@gmail.com | +233591929279</p>
+<p>© 2026 Tech News</p>
+</footer>
+
+</body>
+</html>
+"""
+
+# Fake AI summary function (replace with real OpenAI API if needed)
+def ai_summary(text):
+    if not text:
+        return "No summary available."
+    # Simple fake summary: first 20 words
+    return ' '.join(text.split()[:20]) + ("..." if len(text.split()) > 20 else "")
+
+@app.route("/", methods=["GET"])
+def home():
+    section = request.args.get("section", "technology")
+    search_query = request.args.get("q", "")
+
+    url = f"https://newsapi.org/v2/top-headlines?category={section}&language=en&pageSize=10&apiKey={API_KEY}"
+    if search_query:
+        url = f"https://newsapi.org/v2/everything?q={search_query}&language=en&pageSize=10&apiKey={API_KEY}"
+
+    response = requests.get(url)
+    data = response.json()
+    articles = data.get("articles", [])
+
+    if not articles:
+        return "No news available"
+
+    # Add AI summaries
+    for article in articles:
+        article['summary'] = ai_summary(article.get('description', article.get('content', '')))
+
+    breaking = articles[0]
+    rest = articles[1:]
+
+    return render_template_string(
+        HTML,
+        breaking=breaking,
+        articles=rest,
+        section=section,
+        comments=comments_store,
+        search_query=search_query
+    )
+
+@app.route("/comment", methods=["POST"])
+def comment():
+    title = request.form.get("title")
+    name = request.form.get("name")
+    comment_text = request.form.get("comment")
+
+    if title not in comments_store:
+        comments_store[title] = []
+
+    comments_store[title].append({"name": name, "comment": comment_text})
+    return redirect("/")
+
+if __name__ == "__main__":
+    app.run(debug=True)
